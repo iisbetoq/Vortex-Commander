@@ -876,6 +876,7 @@ async def _claim_invite_only(invite_code: str) -> tuple[str | None, str | None, 
                 data = await resp.json()
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             return None, None, str(e)
+    log.info("claim response: %s", data)
     bk = data.get("bearerKey") or data.get("bearer_key") or ""
     rk = data.get("runtimeKind") or data.get("runtime_kind") or "hermes"
     return bk, rk, None
@@ -982,7 +983,8 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
         return web.json_response({"error": "claim_failed", "detail": msg}, status=502)
 
     if not bk:
-        return web.json_response({"error": "claim_no_key"}, status=502)
+        log.warning("claim_no_key: response keys=%s", list(data.keys()))
+        return web.json_response({"error": "claim_no_key", "detail": str(data)}, status=502)
 
     # Claim succeeded — now try to fetch instructions.
     # If instructions fail (not yet approved on dashboard), enter waiting mode.
