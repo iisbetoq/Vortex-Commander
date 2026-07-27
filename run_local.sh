@@ -112,6 +112,7 @@ cmd_start() {
   else
     # Ensure Hermes config has api_server platform enabled
     _ensure_api_server_config
+    # Use --force to override systemd supervision detection
     _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run --force
     sleep 4
   fi
