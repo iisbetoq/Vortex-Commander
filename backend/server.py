@@ -961,7 +961,10 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "invalid_json"}, status=400)
 
-    invite_code = (body.get("invite_code") or "").strip()
+    raw = (body.get("invite_code") or "").strip()
+    # Extract vortex_invite_ code from pasted instruction text
+    m = re.search(r'vortex_invite_[a-zA-Z0-9]+', raw)
+    invite_code = m.group(0) if m else raw
     if not invite_code:
         return web.json_response({"error": "missing_invite_code"}, status=400)
 

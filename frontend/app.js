@@ -927,6 +927,14 @@ const App = {
       onboardPollCode.value = '';
       onboardError.value = '';
     }
+    function onOnboardPaste(e) {
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      const m = text.match(/vortex_invite_[a-zA-Z0-9]+/);
+      if (m) {
+        e.preventDefault();
+        onboardForm.value.invite_code = m[0];
+      }
+    }
 
     function cancelOnboard() {
       onboardForm.value = null;
@@ -2049,7 +2057,7 @@ const App = {
       // settings hub
       panel, messengerStatus, onAgentChange, addAgent, removeAgent, agentForm, startAddAgent, cancelAddAgent,
       activateAgent, activateBusy,
-      onboardForm, onboardBusy, onboardWaiting, onboardError, onboardAgent, startOnboard, cancelOnboard,
+      onboardForm, onboardBusy, onboardWaiting, onboardError, onboardAgent, startOnboard, cancelOnboard, onOnboardPaste,
       agentEditor, openAgentEditor, saveAgentEditor, closeAgentEditor,
       memEditor, openMemory, saveMemory,
       skillsList, skillsLoading, skillImporter, skillPreview,
@@ -2519,7 +2527,7 @@ const App = {
             <div v-if="onboardError" style="color:#e74c3c;margin-bottom:8px;font-size:13px;">{{ onboardError }}</div>
             <div class="field">
               <label>Invite Code</label>
-              <input type="text" v-model="onboardForm.invite_code" placeholder="Paste invite code from VORTEX platform" @keydown.enter="onboardAgent" />
+              <input type="text" v-model="onboardForm.invite_code" placeholder="Paste invite code from VORTEX platform" @keydown.enter="onboardAgent" @paste="onOnboardPaste" />
             </div>
             <div class="field">
               <label>Agent Name (optional)</label>
