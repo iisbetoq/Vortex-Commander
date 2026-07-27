@@ -878,10 +878,12 @@ const App = {
         const body = { invite_code: code };
         const n = onboardForm.value.name?.trim();
         if (n) body.name = n;
-        await api('/api/agents/onboard', { method: 'POST', body: JSON.stringify(body) });
+        const agent = await api('/api/agents/onboard', { method: 'POST', body: JSON.stringify(body) });
         onboardForm.value = null;
         toast('✅ Agent onboarded from VORTEX platform');
         await loadAgents();
+        selectedAgentId.value = agent.id;
+        await newChat({ replace: true });
       } catch (e) {
         toast(`Onboard failed: ${e.message || e}`, 'error');
       } finally {
