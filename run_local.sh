@@ -104,14 +104,28 @@ YAML
   fi
 }
 
+# ---- .env helper -----------------------------------------------------------
+_ensure_api_server_env() {
+  local envf="$HOME/.hermes/.env"
+  [ -f "$envf" ] || return 0
+  for var in "API_SERVER_PORT=61317" "API_SERVER_HOST=127.0.0.1" "API_SERVER_ENABLED=true"; do
+    local key="${var%%=*}"
+    if ! grep -q "^${key}=" "$envf" 2>/dev/null; then
+      echo "$var" >> "$envf"
+      echo "  added ${var} to ${envf}"
+    fi
+  done
+}
+
 # ---- commands --------------------------------------------------------------
 cmd_start() {
   echo "Starting VORTEX Agent stack..."
   if _port 61317 | grep -q UP; then
     echo "  gateway (api_server:61317) already running (port 61317 is UP)"
   else
-    # Ensure Hermes config has api_server platform enabled
+    # Ensure Hermes config + .env have api_server enabled
     _ensure_api_server_config
+    _ensure_api_server_env
     # Use --replace to override any existing gateway (systemd or manual)
     _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run --replace
     sleep 4
