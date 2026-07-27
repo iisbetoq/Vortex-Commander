@@ -57,6 +57,16 @@ elif ! grep -q '^VORTEX_ADMIN_KEY=' "$HERMES_ENV" 2>/dev/null; then
   echo "==> Added VORTEX_ADMIN_KEY to $HERMES_ENV"
 fi
 
+# Ensure API_SERVER_KEY and related vars exist (fixes upgrade from PumpApi-era .env)
+ADMIN_KEY="$(grep '^VORTEX_ADMIN_KEY=' "$HERMES_ENV" | head -1 | cut -d= -f2)"
+for pair in "API_SERVER_KEY=${ADMIN_KEY}" "API_SERVER_PORT=${API_SERVER_PORT:-61317}" "API_SERVER_HOST=${API_SERVER_HOST:-127.0.0.1}" "API_SERVER_ENABLED=true"; do
+  key="${pair%%=*}"
+  if ! grep -q "^${key}=" "$HERMES_ENV" 2>/dev/null; then
+    echo "${pair}" >> "$HERMES_ENV"
+    echo "==> Added ${pair} to ${HERMES_ENV}"
+  fi
+done
+
 # 1. Create venv (respects PEP 668 - no global pip installs).
 if [ ! -d "$VENV" ]; then
   echo "==> Creating virtualenv at $VENV"

@@ -157,12 +157,21 @@ _ensure_api_server_env() {
       fi
     done
   fi
-  # Copy API_SERVER_KEY from top-level .env to profile .env if missing
-  local top_key; top_key="$(grep '^API_SERVER_KEY=' "$top_env" 2>/dev/null | head -1)"
-  if [ -n "$top_key" ] && [ "$envf" != "$top_env" ]; then
-    if ! grep -q '^API_SERVER_KEY=' "$envf" 2>/dev/null; then
+  # Ensure API_SERVER_KEY exists — generate if missing from both
+  if ! grep -q '^API_SERVER_KEY=' "$envf" 2>/dev/null; then
+    local top_key; top_key="$(grep '^API_SERVER_KEY=' "$top_env" 2>/dev/null | head -1)"
+    if [ -n "$top_key" ]; then
       echo "$top_key" >> "$envf"
       echo "  copied API_SERVER_KEY to $envf"
+    else
+      local gen_key; gen_key="$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))")"
+      echo "API_SERVER_KEY=${gen_key}" >> "$envf"
+      echo "  generated API_SERVER_KEY in ${envf}"
+      # Also write to top-level .env if different
+      if [ "$envf" != "$top_env" ]; then
+        echo "API_SERVER_KEY=${gen_key}" >> "$top_env"
+        echo "  generated API_SERVER_KEY in ${top_env}"
+      fi
     fi
   fi
 }
