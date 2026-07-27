@@ -167,6 +167,25 @@ _ensure_api_server_env() {
   fi
 }
 
+# ---- systemd helper --------------------------------------------------------
+_stop_systemd_gateway() {
+  local sd_units
+  sd_units="$(systemctl --user list-units --plain 2>/dev/null | grep -i 'hermes.*gateway' | awk '{print $1}' || true)"
+  if [ -z "$sd_units" ]; then
+    # Try matching by profile name
+    local profile; profile="$(hermes config path 2>/dev/null | xargs dirname 2>/dev/null | xargs basename 2>/dev/null || echo "")"
+    if [ -n "$profile" ]; then
+      sd_units="$(systemctl --user list-units --plain 2>/dev/null | grep -i "hermes.*${profile}" | awk '{print $1}' || true)"
+    fi
+  fi
+  for unit in $sd_units; do
+    echo "  stopping systemd service: $unit"
+    systemctl --user stop "$unit" 2>/dev/null || true
+    systemctl --user disable "$unit" 2>/dev/null || true
+  done
+  [ -n "$sd_units" ] && sleep 2
+}
+
 # ---- commands --------------------------------------------------------------
 cmd_start() {
   echo "Starting VORTEX Agent stack..."
@@ -176,7 +195,9 @@ cmd_start() {
     # Ensure Hermes config + .env have api_server enabled
     _ensure_api_server_config
     _ensure_api_server_env
-    # Use --replace to override any existing gateway (systemd or manual)
+    # Stop any systemd gateway service to prevent conflict
+    _stop_systemd_gateway
+    # Use --replace to override any remaining gateway instance
     _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run --replace
     sleep 4
   fi
