@@ -528,7 +528,7 @@ const App = {
     onMounted(async () => {
       await loadModels();
       await loadAgents();
-      await loadChats();
+      await loadChats({ agent_id: selectedAgentId.value || null });
       // Measure viewport AFTER the chats list is in the DOM, so the virtual
       // scroll computes a sensible window on first render.
       await nextTick();
@@ -647,9 +647,7 @@ const App = {
     // needed (e.g. after the assistant turn updates `updated_at`).
     const CHATS_PAGE_SIZE = 50;
 
-    async function loadChats({ reset = true, query = null } = {}) {
-      // `query=null` means "use whatever's in chatsSearch right now". Pass
-      // an explicit '' to clear, or a string to override.
+    async function loadChats({ reset = true, query = null, agent_id = null } = {}) {
       if (query !== null) chatsSearch.value = query;
       if (reset) {
         chats.value = [];
@@ -660,6 +658,7 @@ const App = {
       try {
         const params = new URLSearchParams({ limit: String(CHATS_PAGE_SIZE) });
         if (chatsSearch.value) params.set('q', chatsSearch.value);
+        if (agent_id) params.set('agent_id', agent_id);
         const r = await api('/api/chats?' + params.toString());
         chats.value = r.items || [];
         chatsCursor.value = r.next_cursor || null;
@@ -677,6 +676,7 @@ const App = {
           cursor: chatsCursor.value,
         });
         if (chatsSearch.value) params.set('q', chatsSearch.value);
+        if (selectedAgentId.value) params.set('agent_id', selectedAgentId.value);
         const r = await api('/api/chats?' + params.toString());
         // Dedupe defensively in case the cursor races against an updated_at
         // bump (a chat could shift pages between requests).
@@ -692,7 +692,7 @@ const App = {
     let searchTimer = null;
     watch(chatsSearch, () => {
       if (searchTimer) clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => loadChats({ reset: true }), 250);
+      searchTimer = setTimeout(() => loadChats({ reset: true, agent_id: selectedAgentId.value || null }), 250);
     });
 
     // Refresh a single chat row by id. Used after the assistant turn finishes
@@ -831,8 +831,23 @@ const App = {
     }
 
     function onAgentChange() {
-      // Switching agent: clear current chat
-      newChat();
+      const aid = selectedAgentId.value;
+      if (!aid) { newChat(); return; }
+      stopPolling();
+      stopEventStream();
+      activeChatId.value = null;
+      messages.value = [];
+      liveAssistant.visible = false;
+      liveAssistant.content = '';
+      liveAssistant.tools = [];
+      // Load this agent's chats and auto-open the most recent one
+      loadChats({ reset: true, agent_id: aid }).then(() => {
+        if (chats.value.length) {
+          openChat(chats.value[0].id);
+        } else {
+          setURLForNewChat();
+        }
+      });
     }
 
     // ---- Agent management ----
@@ -1358,7 +1373,7 @@ const App = {
       abortController = new AbortController();
       try {
         if (!activeChatId.value) {
-          const r = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model: selectedModel.value }) });
+          const r = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model: selectedModel.value, agent_id: selectedAgentId.value || undefined }) });
           activeChatId.value = r.id;
           setURLForChat(r.id, { replace: isNewChatURL() });
           startEventStreamFor(r.id);

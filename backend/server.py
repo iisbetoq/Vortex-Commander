@@ -353,9 +353,14 @@ async def api_list_chats(request: web.Request) -> web.Response:
 
     q = (request.query.get("q") or "").strip()
     cursor = request.query.get("cursor") or ""
+    agent_id = (request.query.get("agent_id") or "").strip()
 
     where = ["EXISTS(SELECT 1 FROM messages WHERE messages.chat_id = chats.id AND messages.role='user')"]
     params: list = []
+
+    if agent_id:
+        where.append("chats.agent_id = ?")
+        params.append(agent_id)
 
     if q:
         where.append("LOWER(COALESCE(title, '')) LIKE ?")
@@ -430,10 +435,11 @@ async def api_create_chat(request: web.Request) -> web.Response:
     chat_id = uuid.uuid4().hex
     now = time.time()
     model = (body or {}).get("model", "")
+    agent_id = (body or {}).get("agent_id", "")
     with db() as c:
         c.execute(
-            "INSERT INTO chats(id,title,pinned,created_at,updated_at,model) VALUES(?,?,?,?,?,?)",
-            (chat_id, "", 0, now, now, model),
+            "INSERT INTO chats(id,title,pinned,created_at,updated_at,model,agent_id) VALUES(?,?,?,?,?,?,?)",
+            (chat_id, "", 0, now, now, model, agent_id or None),
         )
     return web.json_response({"id": chat_id})
 
