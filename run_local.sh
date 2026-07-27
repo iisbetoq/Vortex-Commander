@@ -184,6 +184,7 @@ _stop_systemd_gateway() {
     systemctl --user disable "$unit" 2>/dev/null || true
   done
   [ -n "$sd_units" ] && sleep 2
+  return 0
 }
 
 # ---- commands --------------------------------------------------------------
