@@ -2051,7 +2051,7 @@ async def api_chat_stream(request: web.Request) -> web.StreamResponse:
             c.execute("UPDATE chats SET title=?, updated_at=?, model=? WHERE id=?", (t, now, model, chat_id))
         else:
             c.execute("UPDATE chats SET updated_at=?, model=? WHERE id=?", (now, model, chat_id))
-        if agent_id and not chat.get("agent_id"):
+        if agent_id and not chat["agent_id"]:
             c.execute("UPDATE chats SET agent_id=? WHERE id=?", (agent_id, chat_id))
 
     messages = _build_messages(chat_id)
