@@ -49,7 +49,7 @@ _start_one() { # $1=name $2=pidfile $3=logfile ; rest = command
     return 0
   fi
   echo "  starting $name ..."
-  setsid nohup "$@" >>"$logf" 2>&1 < /dev/null &
+  nohup "$@" >>"$logf" 2>&1 < /dev/null &
   echo $! > "$pidf"
   sleep 1
   if _alive "$pidf"; then
