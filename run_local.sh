@@ -112,7 +112,7 @@ cmd_start() {
   else
     # Ensure Hermes config has api_server platform enabled
     _ensure_api_server_config
-    _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run
+    _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run --force
     sleep 4
   fi
   _start_one "backend (web:61318)" "$BE_PID" "$BE_LOG" "$VENV_PY" "$ROOT/backend/server.py"
