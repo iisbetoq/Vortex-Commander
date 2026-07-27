@@ -830,9 +830,10 @@ async def api_patch_agent(request: web.Request) -> web.Response:
             values.append(str(body[key]))
     if not fields:
         return web.json_response({"ok": True})
+    values.append(time.time())
     values.append(agent_id)
     with db() as c:
-        c.execute(f"UPDATE agents SET {', '.join(fields)}, updated_at=? WHERE id=?", (*values, time.time()))
+        c.execute(f"UPDATE agents SET {', '.join(fields)}, updated_at=? WHERE id=?", values)
     return web.json_response({"ok": True})
 
 
