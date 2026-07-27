@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# run_local.sh - start / stop / status / restart the VORTEX Agent stack locally.
+#
+# Runs two detached processes so they SURVIVE closing your terminal/SSH session:
+#   1. Hermes gateway  -> hosts api_server on 127.0.0.1:61317
+#   2. Backend server  -> web UI + proxy on 0.0.0.0:61318
+#
+# Usage:
+#   ./run_local.sh start      # start both (idempotent)
+#   ./run_local.sh stop       # stop both
+#   ./run_local.sh restart    # stop then start
+#   ./run_local.sh status     # show what is running + ports
+#   ./run_local.sh logs       # tail both logs (Ctrl-C to exit)
+#
+# Logs:  <repo>/data/logs/gateway.log , <repo>/data/logs/backend.log
+# PIDs:  <repo>/data/run/gateway.pid  , <repo>/data/run/backend.pid
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$SCRIPT_DIR"
+cd "$ROOT"
+
+VENV_PY="$ROOT/venv/bin/python"
+LOG_DIR="$ROOT/data/logs"
+RUN_DIR="$ROOT/data/run"
+mkdir -p "$LOG_DIR" "$RUN_DIR"
+
+GW_PID="$RUN_DIR/gateway.pid"
+BE_PID="$RUN_DIR/backend.pid"
+GW_LOG="$LOG_DIR/gateway.log"
+BE_LOG="$LOG_DIR/backend.log"
+
+HERMES_BIN="$(command -v hermes || echo "$HOME/.local/bin/hermes")"
+
+# ---- helpers ---------------------------------------------------------------
+_alive() { # $1 = pidfile
+  local f="$1"
+  [ -f "$f" ] || return 1
+  local pid; pid="$(cat "$f" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+_start_one() { # $1=name $2=pidfile $3=logfile ; rest = command
+  local name="$1" pidf="$2" logf="$3"; shift 3
+  if _alive "$pidf"; then
+    echo "  $name already running (pid $(cat "$pidf"))"
+    return 0
+  fi
+  echo "  starting $name ..."
+  setsid nohup "$@" >>"$logf" 2>&1 < /dev/null &
+  echo $! > "$pidf"
+  sleep 1
+  if _alive "$pidf"; then
+    echo "  $name started (pid $(cat "$pidf")) -> $logf"
+  else
+    echo "  ERROR: $name failed to start, check $logf" >&2
+    return 1
+  fi
+}
+
+_stop_one() { # $1=name $2=pidfile
+  local name="$1" pidf="$2"
+  if _alive "$pidf"; then
+    local pid; pid="$(cat "$pidf")"
+    echo "  stopping $name (pid $pid) ..."
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 10); do _alive "$pidf" || break; sleep 0.5; done
+    _alive "$pidf" && { echo "  force killing $name"; kill -9 "$pid" 2>/dev/null || true; }
+  else
+    echo "  $name not running"
+  fi
+  rm -f "$pidf"
+}
+
+_port() { (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -q ":$1 " && echo "UP" || echo "down"; }
+
+# ---- commands --------------------------------------------------------------
+cmd_start() {
+  echo "Starting VORTEX Agent stack..."
+  _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run
+  # give api_server a moment to bind before backend proxies to it
+  sleep 4
+  _start_one "backend (web:61318)" "$BE_PID" "$BE_LOG" "$VENV_PY" "$ROOT/backend/server.py"
+  echo
+  cmd_status
+}
+
+cmd_stop() {
+  echo "Stopping VORTEX Agent stack..."
+  _stop_one "backend" "$BE_PID"
+  _stop_one "gateway" "$GW_PID"
+}
+
+cmd_status() {
+  echo "Status:"
+  _alive "$GW_PID" && echo "  gateway : running (pid $(cat "$GW_PID"))" || echo "  gateway : stopped"
+  _alive "$BE_PID" && echo "  backend : running (pid $(cat "$BE_PID"))" || echo "  backend : stopped"
+  echo "  port 61317 (api_server): $(_port 61317)"
+  echo "  port 61318 (web UI)    : $(_port 61318)"
+  echo
+  echo "  Web UI: http://127.0.0.1:61318"
+}
+
+cmd_logs() { tail -n 40 -f "$GW_LOG" "$BE_LOG"; }
+
+case "${1:-start}" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  restart) cmd_stop; sleep 1; cmd_start ;;
+  status)  cmd_status ;;
+  logs)    cmd_logs ;;
+  *) echo "Usage: $0 {start|stop|restart|status|logs}" >&2; exit 1 ;;
+esac

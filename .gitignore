@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+data/app.db
+data/logs/
+data/run/
+data/models.json
+data/uploads/
+*.tar.gz
+xxxcontoh/

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>VORTEX Agent — Sign in</title>
+  <link rel="icon" type="image/webp" href="/assets/logo.webp" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="login-logo"><img src="/assets/logo.webp" alt="VORTEX" /></div>
+    <h1>VORTEX Agent</h1>
+    <p class="login-sub">Sign in with your admin key.</p>
+    <form id="login-form">
+      <input type="password" id="identifier" placeholder="Admin Key" autocomplete="off" autofocus />
+      <button type="submit" id="signin-btn">Sign in</button>
+    </form>
+    <div class="login-error" id="err"></div>
+  </div>
+  <script>
+    const f = document.getElementById('login-form');
+    const err = document.getElementById('err');
+    const btn = document.getElementById('signin-btn');
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      err.textContent = '';
+      btn.disabled = true;
+      const identifier = document.getElementById('identifier').value.trim();
+      try {
+        const r = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier }),
+        });
+        if (r.ok) {
+          window.location.href = '/';
+        } else {
+          err.textContent = 'Invalid key. Please try again.';
+          btn.disabled = false;
+        }
+      } catch (e) {
+        err.textContent = 'Network error: ' + e.message;
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

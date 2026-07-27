@@ -1,0 +1,16 @@
+[Unit]
+Description=VORTEX Agent - backend web UI + proxy (0.0.0.0:61318)
+After=vortex-gateway.service
+Wants=vortex-gateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=%REPO%
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do (ss -ltn 2>/dev/null || netstat -ltn) | grep -q 127.0.0.1:61317 && exit 0; sleep 1; done; exit 0'
+ExecStart=%REPO%/venv/bin/python %REPO%/backend/server.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
