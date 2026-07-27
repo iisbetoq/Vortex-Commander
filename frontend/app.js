@@ -872,11 +872,13 @@ const App = {
     const onboardBusy = ref(false);
     const onboardWaiting = ref(false); // true while polling for dashboard approval
     const onboardPollCode = ref('');
+    const onboardError = ref('');
     let onboardPollTimer = null;
 
     async function onboardAgent() {
       const code = onboardForm.value?.invite_code?.trim();
-      if (!code) return;
+      if (!code) { onboardError.value = 'Masukkan invite code'; return; }
+      onboardError.value = '';
       onboardBusy.value = true;
       onboardWaiting.value = false;
       onboardPollCode.value = '';
@@ -908,6 +910,7 @@ const App = {
         selectedAgentId.value = agent.id;
         await newChat({ replace: true });
       } catch (e) {
+        onboardError.value = `Onboard gagal: ${e.message || e}`;
         toast(`Onboard failed: ${e.message || e}`, 'error');
       } finally {
         if (!onboardWaiting.value) onboardBusy.value = false;
@@ -918,12 +921,14 @@ const App = {
       onboardForm.value = { invite_code: '', name: '' };
       onboardWaiting.value = false;
       onboardPollCode.value = '';
+      onboardError.value = '';
     }
 
     function cancelOnboard() {
       onboardForm.value = null;
       onboardWaiting.value = false;
       onboardPollCode.value = '';
+      onboardError.value = '';
       if (onboardPollTimer) clearInterval(onboardPollTimer);
       onboardPollTimer = null;
     }
@@ -948,6 +953,7 @@ const App = {
         if (onboardPollTimer) { clearInterval(onboardPollTimer); onboardPollTimer = null; }
         onboardWaiting.value = false;
         onboardPollCode.value = '';
+        onboardError.value = '';
         onboardForm.value = null;
         toast('✅ Agent onboarded from VORTEX platform');
         await loadAgents();
@@ -2039,7 +2045,7 @@ const App = {
       // settings hub
       panel, messengerStatus, onAgentChange, addAgent, removeAgent, agentForm, startAddAgent, cancelAddAgent,
       activateAgent, activateBusy,
-      onboardForm, onboardBusy, onboardWaiting, onboardAgent, startOnboard, cancelOnboard,
+      onboardForm, onboardBusy, onboardWaiting, onboardError, onboardAgent, startOnboard, cancelOnboard,
       agentEditor, openAgentEditor, saveAgentEditor, closeAgentEditor,
       memEditor, openMemory, saveMemory,
       skillsList, skillsLoading, skillImporter, skillPreview,
@@ -2506,6 +2512,7 @@ const App = {
             </div>
           </div>
           <div v-else-if="onboardForm" class="agent-form">
+            <div v-if="onboardError" style="color:#e74c3c;margin-bottom:8px;font-size:13px;">{{ onboardError }}</div>
             <div class="field">
               <label>Invite Code</label>
               <input type="text" v-model="onboardForm.invite_code" placeholder="Paste invite code from VORTEX platform" @keydown.enter="onboardAgent" />
