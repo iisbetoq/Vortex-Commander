@@ -837,7 +837,6 @@ const App = {
 
     // ---- Agent management ----
     const agentForm = ref(null);
-    const importBusy = ref(false);
     const activateBusy = ref(null);
     async function addAgent() {
       const name = agentForm.value?.name?.trim();
@@ -867,19 +866,6 @@ const App = {
       agentForm.value = { name: '' };
     }
     function cancelAddAgent() { agentForm.value = null; }
-
-    async function importExistingAgent() {
-      importBusy.value = true;
-      try {
-        const r = await api('/api/agents/import-existing', { method: 'POST' });
-        toast(`✅ Imported: ${r.name}`);
-        await loadAgents();
-      } catch (e) {
-        toast(`Import failed: ${e.message || e}`, 'error');
-      } finally {
-        importBusy.value = false;
-      }
-    }
 
     // ---- VORTEX Onboard ----
     const onboardForm = ref(null); // {invite_code, name}
@@ -1987,7 +1973,7 @@ const App = {
       settings,
       // settings hub
       panel, messengerStatus, onAgentChange, addAgent, removeAgent, agentForm, startAddAgent, cancelAddAgent,
-      importBusy, importExistingAgent, activateAgent, activateBusy,
+      activateAgent, activateBusy,
       onboardForm, onboardBusy, onboardAgent, startOnboard, cancelOnboard,
       agentEditor, openAgentEditor, saveAgentEditor, closeAgentEditor,
       memEditor, openMemory, saveMemory,
@@ -2462,7 +2448,6 @@ const App = {
           <div v-else class="modal-actions">
             <button @click="startAddAgent">+ Add Agent</button>
             <button class="primary" @click="startOnboard">⚡ VORTEX Onboard</button>
-            <button :disabled="importBusy" @click="importExistingAgent">{{ importBusy ? 'Importing…' : '📥 Import existing' }}</button>
             <button @click="panel = null">Close</button>
           </div>
         </div>

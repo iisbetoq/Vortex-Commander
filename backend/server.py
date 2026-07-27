@@ -1157,61 +1157,6 @@ async def _deactivate_agent() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Import existing VORTEX agent from Hermes into Commander
-# ---------------------------------------------------------------------------
-
-async def api_import_existing(request: web.Request) -> web.Response:
-    """Scan Hermes defaults for an existing VORTEX agent and create a Commander entry."""
-    soul_path = HERMES_HOME / "SOUL.md"
-    skill_dir = HERMES_SKILLS_DIR / "vortex"
-    mem_dir = HERMES_MEM_DIR
-
-    if not soul_path.exists():
-        return web.json_response({"error": "no_existing_agent", "detail": "No SOUL.md found"}, status=404)
-
-    soul = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
-    memory = (mem_dir / "MEMORY.md").read_text(encoding="utf-8") if (mem_dir / "MEMORY.md").exists() else ""
-    user_memory = (mem_dir / "USER.md").read_text(encoding="utf-8") if (mem_dir / "USER.md").exists() else ""
-
-    skills: dict[str, str] = {}
-    if skill_dir.exists():
-        for f in skill_dir.rglob("*"):
-            if f.is_file():
-                rel = f.relative_to(skill_dir)
-                skills[str(rel)] = f.read_text(encoding="utf-8")
-
-    bearer_key = ""
-    env_key = (HERMES_HOME / ".env").read_text(encoding="utf-8") if (HERMES_HOME / ".env").exists() else ""
-    for line in env_key.splitlines():
-        if line.startswith("VORTEX_AGENT_API_KEY="):
-            bearer_key = line.split("=", 1)[1].strip()
-            break
-
-    name = "VORTEX Agent (imported)"
-
-    agent_id = uuid.uuid4().hex
-    now = time.time()
-    skills_json = json.dumps(skills)
-
-    with db() as c:
-        c.execute(
-            """INSERT INTO agents
-               (id, name, runtime_kind, status, vortex_agent_api_key,
-                soul_content, memory_content, user_memory_content, skills_content,
-                created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (agent_id, name, "hermes", "imported", bearer_key,
-             soul, memory, user_memory, skills_json, now, now),
-        )
-
-    # Write to per-agent directory
-    await _write_agent_to_disk(agent_id, soul, memory, user_memory, skills, bearer_key)
-    await _activate_agent(agent_id)
-
-    return web.json_response({"id": agent_id, "name": name, "status": "imported"})
-
-
-# ---------------------------------------------------------------------------
 # Activate an agent (write its files to Hermes default paths)
 # ---------------------------------------------------------------------------
 
@@ -2445,7 +2390,6 @@ def create_app() -> web.Application:
     app.router.add_get("/api/agents", require_auth(api_list_agents))
     app.router.add_post("/api/agents", require_auth(api_create_agent))
     app.router.add_post("/api/agents/onboard", require_auth(api_onboard_agent))
-    app.router.add_post("/api/agents/import-existing", require_auth(api_import_existing))
     app.router.add_get("/api/agents/{agent_id}", require_auth(api_get_agent))
     app.router.add_patch("/api/agents/{agent_id}", require_auth(api_patch_agent))
     app.router.add_delete("/api/agents/{agent_id}", require_auth(api_delete_agent))
