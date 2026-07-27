@@ -838,7 +838,7 @@ const App = {
     // ---- Agent management ----
     const agentForm = ref(null);
     const importBusy = ref(false);
-    const activateBusy = ref<string | null>(null);
+    const activateBusy = ref(null);
     async function addAgent() {
       const name = agentForm.value?.name?.trim();
       if (!name) return;
