@@ -929,7 +929,7 @@ const App = {
     }
     function onOnboardPaste(e) {
       const text = (e.clipboardData || window.clipboardData).getData('text');
-      const m = text.match(/vortex_invite_[a-zA-Z0-9]+/);
+      const m = text.match(/vortex_invite_[\w-]+/);
       if (m) {
         e.preventDefault();
         onboardForm.value.invite_code = m[0];
