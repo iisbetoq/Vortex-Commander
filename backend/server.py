@@ -970,10 +970,13 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
     bk, rk, err = await _claim_invite_only(invite_code)
 
     if err:
-        # If already approved (not pending), we can still try to proceed
-        # if we can get access some other way — but for now we tell the
-        # user to create a fresh invite so we can claim it while pending.
-        return web.json_response({"error": "claim_failed", "detail": err}, status=502)
+        # Parse the VORTEX API error to give a user-friendly message
+        try:
+            err_obj = json.loads(err)
+            msg = (err_obj.get("error") or {}).get("message") or err
+        except Exception:
+            msg = err
+        return web.json_response({"error": "claim_failed", "detail": msg}, status=502)
 
     if not bk:
         return web.json_response({"error": "claim_no_key"}, status=502)

@@ -902,7 +902,11 @@ const App = {
           onboardPollTimer = setInterval(pollOnboardApproval, 3000);
           return;
         }
-        if (!r.ok) throw new Error('request failed: ' + r.status);
+        if (!r.ok) {
+          let detail = '';
+          try { const e = await r.json(); detail = e.detail || e.error || ''; } catch (_) {}
+          throw new Error(detail || `request failed: ${r.status}`);
+        }
         const agent = await r.json();
         onboardForm.value = null;
         toast('✅ Agent onboarded from VORTEX platform');
