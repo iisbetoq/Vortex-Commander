@@ -858,20 +858,16 @@ async def api_delete_agent(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 VORTEX_API_BASE = "https://api.vortex.haus"
 
-async def api_onboard_agent(request: web.Request) -> web.Response:
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "invalid_json"}, status=400)
+# In-memory store for pending onboard polling
+_onboard_pending: dict[str, dict] = {}  # invite_code -> {"name": str, "agent_id": str|None, "bearer_key": str|None}
 
-    invite_code = (body.get("invite_code") or "").strip()
-    if not invite_code:
-        return web.json_response({"error": "missing_invite_code"}, status=400)
-
-    name = (body.get("name") or "").strip()
-
+async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | dict | None:
+    """Try to claim invite and complete setup. Returns:
+      - web.Response if error/need-approval
+      - dict with agent data if success
+      - None if need to retry later (waiting_approval)
+    """
     async with aiohttp.ClientSession() as sess:
-        # Step 1: Claim invite
         try:
             async with sess.post(
                 f"{VORTEX_API_BASE}/agent/auth/claim-invite",
@@ -880,6 +876,9 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
             ) as resp:
                 if resp.status != 200:
                     err_text = await resp.text()
+                    # If invite is not pending, tell caller to wait for approval
+                    if "agent_invite_not_pending" in err_text or "not_pending" in err_text:
+                        return None
                     return web.json_response(
                         {"error": "claim_failed", "detail": err_text},
                         status=502,
@@ -888,15 +887,14 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             return web.json_response({"error": "claim_network_error", "detail": str(e)}, status=502)
 
-        bearer_key = claim_data.get("bearerKey") or claim_data.get("bearer_key") or ""
-        runtime_kind = claim_data.get("runtimeKind") or claim_data.get("runtime_kind") or "hermes"
-        if not bearer_key:
-            return web.json_response({"error": "claim_no_key", "detail": str(claim_data)}, status=502)
+    bearer_key = claim_data.get("bearerKey") or claim_data.get("bearer_key") or ""
+    runtime_kind = claim_data.get("runtimeKind") or claim_data.get("runtime_kind") or "hermes"
+    if not bearer_key:
+        return web.json_response({"error": "claim_no_key", "detail": str(claim_data)}, status=502)
+    if runtime_kind not in ("hermes", "openclaw"):
+        return web.json_response({"error": "unsupported_runtime", "runtime": runtime_kind}, status=400)
 
-        if runtime_kind not in ("hermes", "openclaw"):
-            return web.json_response({"error": "unsupported_runtime", "runtime": runtime_kind}, status=400)
-
-        # Step 2: Fetch instructions
+    async with aiohttp.ClientSession() as sess:
         try:
             async with sess.get(
                 f"{VORTEX_API_BASE}/agent/instructions",
@@ -913,7 +911,6 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
             return web.json_response({"error": "instructions_network_error", "detail": str(e)}, status=502)
 
-    # Step 3: Extract documents from manifest
     manifest = instr_data.get("documents") or instr_data.get("manifest") or []
     soul_content = ""
     memory_content = ""
@@ -922,7 +919,6 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
     for doc in manifest:
         url = doc.get("url") or ""
         path = doc.get("path") or ""
-
         content = ""
         if url:
             async with aiohttp.ClientSession() as sess:
@@ -932,25 +928,20 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
                             content = await dresp.text()
                 except Exception:
                     pass
-
         if not content:
             continue
-
         if "SOUL.md" in path or path.lower().endswith("soul.md"):
             soul_content = content
         elif "MEMORY.md" in path or path.lower().endswith("memory.md"):
             memory_content = content
         else:
-            # Store all other files in skills map (keyed by relative filename)
             rel = path.replace("skills/vortex/", "").replace("skills/", "")
             if rel:
                 skills_map[rel] = content
 
-    # Step 4: Derive name from instructions if not provided
     if not name:
         name = instr_data.get("instructionProfile", {}).get("name", "VORTEX Agent")
 
-    # Step 5: Create agent in DB
     agent_id = uuid.uuid4().hex
     now = time.time()
     skills_json = json.dumps(skills_map)
@@ -964,17 +955,52 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
              soul_content, memory_content, skills_json, now, now),
         )
 
-    # Step 6: Write to per-agent directory + activate + setup cron
     await _write_agent_to_disk(agent_id, soul_content, memory_content, "", skills_map, bearer_key)
     await _activate_agent(agent_id)
     await _setup_heartbeat_cron(agent_id)
 
-    return web.json_response({
-        "id": agent_id,
-        "name": name,
-        "runtime_kind": runtime_kind,
-        "status": "onboarded",
-    })
+    return {"id": agent_id, "name": name, "runtime_kind": runtime_kind, "status": "onboarded"}
+
+
+async def api_onboard_agent(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    invite_code = (body.get("invite_code") or "").strip()
+    if not invite_code:
+        return web.json_response({"error": "missing_invite_code"}, status=400)
+
+    name = (body.get("name") or "").strip()
+
+    result = await _try_claim_and_setup(invite_code, name)
+    if isinstance(result, web.Response):
+        return result
+    if result is None:
+        _onboard_pending[invite_code] = {"name": name, "agent_id": None, "bearer_key": None}
+        return web.json_response({"status": "waiting_approval", "invite_code": invite_code}, status=202)
+    return web.json_response(result)
+
+
+async def api_onboard_poll(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    invite_code = (body.get("invite_code") or "").strip()
+    if not invite_code or invite_code not in _onboard_pending:
+        return web.json_response({"error": "not_pending"}, status=404)
+
+    pending = _onboard_pending[invite_code]
+    result = await _try_claim_and_setup(invite_code, pending["name"])
+    if isinstance(result, web.Response):
+        return result
+    if result is None:
+        return web.json_response({"status": "waiting_approval", "invite_code": invite_code})
+    del _onboard_pending[invite_code]
+    return web.json_response(result)
     
 
 # ---------------------------------------------------------------------------
@@ -2391,6 +2417,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/agents", require_auth(api_list_agents))
     app.router.add_post("/api/agents", require_auth(api_create_agent))
     app.router.add_post("/api/agents/onboard", require_auth(api_onboard_agent))
+    app.router.add_post("/api/agents/onboard/poll", require_auth(api_onboard_poll))
     app.router.add_get("/api/agents/{agent_id}", require_auth(api_get_agent))
     app.router.add_patch("/api/agents/{agent_id}", require_auth(api_patch_agent))
     app.router.add_delete("/api/agents/{agent_id}", require_auth(api_delete_agent))

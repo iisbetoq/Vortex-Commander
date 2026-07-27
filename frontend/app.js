@@ -870,15 +870,38 @@ const App = {
     // ---- VORTEX Onboard ----
     const onboardForm = ref(null); // {invite_code, name}
     const onboardBusy = ref(false);
+    const onboardWaiting = ref(false); // true while polling for dashboard approval
+    const onboardPollCode = ref('');
+    let onboardPollTimer = null;
+
     async function onboardAgent() {
       const code = onboardForm.value?.invite_code?.trim();
       if (!code) return;
       onboardBusy.value = true;
+      onboardWaiting.value = false;
+      onboardPollCode.value = '';
       try {
-        const body = { invite_code: code };
-        const n = onboardForm.value.name?.trim();
-        if (n) body.name = n;
-        const agent = await api('/api/agents/onboard', { method: 'POST', body: JSON.stringify(body) });
+        const r = await fetch('/api/agents/onboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invite_code: code,
+            ...(onboardForm.value.name?.trim() ? { name: onboardForm.value.name.trim() } : {}),
+          }),
+          credentials: 'same-origin',
+        });
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        if (r.status === 202) {
+          // Waiting for dashboard approval
+          onboardWaiting.value = true;
+          onboardPollCode.value = code;
+          onboardBusy.value = false;
+          if (onboardPollTimer) clearInterval(onboardPollTimer);
+          onboardPollTimer = setInterval(pollOnboardApproval, 3000);
+          return;
+        }
+        if (!r.ok) throw new Error('request failed: ' + r.status);
+        const agent = await r.json();
         onboardForm.value = null;
         toast('✅ Agent onboarded from VORTEX platform');
         await loadAgents();
@@ -887,13 +910,53 @@ const App = {
       } catch (e) {
         toast(`Onboard failed: ${e.message || e}`, 'error');
       } finally {
-        onboardBusy.value = false;
+        if (!onboardWaiting.value) onboardBusy.value = false;
       }
     }
-    function startOnboard() {
+
+    async function startOnboard() {
       onboardForm.value = { invite_code: '', name: '' };
+      onboardWaiting.value = false;
+      onboardPollCode.value = '';
     }
-    function cancelOnboard() { onboardForm.value = null; }
+
+    function cancelOnboard() {
+      onboardForm.value = null;
+      onboardWaiting.value = false;
+      onboardPollCode.value = '';
+      if (onboardPollTimer) clearInterval(onboardPollTimer);
+      onboardPollTimer = null;
+    }
+
+    // Poll backend until the invite is approved on VORTEX dashboard
+    async function pollOnboardApproval() {
+      if (!onboardPollCode.value) return;
+      try {
+        const r = await fetch('/api/agents/onboard/poll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invite_code: onboardPollCode.value }),
+          credentials: 'same-origin',
+        });
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        const data = await r.json();
+        if (data.status === 'waiting_approval') {
+          // Still waiting — poll timer will try again
+          return;
+        }
+        // Success — agent is ready
+        if (onboardPollTimer) { clearInterval(onboardPollTimer); onboardPollTimer = null; }
+        onboardWaiting.value = false;
+        onboardPollCode.value = '';
+        onboardForm.value = null;
+        toast('✅ Agent onboarded from VORTEX platform');
+        await loadAgents();
+        selectedAgentId.value = data.id;
+        await newChat({ replace: true });
+      } catch (e) {
+        // Transient error, keep polling
+      }
+    }
 
     // ---- Agent editor (SOUL / memory per-agent) ----
     const agentEditor = ref(null);
@@ -1976,7 +2039,7 @@ const App = {
       // settings hub
       panel, messengerStatus, onAgentChange, addAgent, removeAgent, agentForm, startAddAgent, cancelAddAgent,
       activateAgent, activateBusy,
-      onboardForm, onboardBusy, onboardAgent, startOnboard, cancelOnboard,
+      onboardForm, onboardBusy, onboardWaiting, onboardAgent, startOnboard, cancelOnboard,
       agentEditor, openAgentEditor, saveAgentEditor, closeAgentEditor,
       memEditor, openMemory, saveMemory,
       skillsList, skillsLoading, skillImporter, skillPreview,
@@ -2429,6 +2492,17 @@ const App = {
             <div class="modal-actions">
               <button @click="cancelAddAgent">Cancel</button>
               <button class="primary" @click="addAgent" :disabled="!agentForm.name.trim()">Add Agent</button>
+            </div>
+          </div>
+          <div v-else-if="onboardWaiting" class="agent-form">
+            <div class="field">
+              <p style="text-align:center;margin:12px 0;">
+                ⏳ Menunggu approve dari dashboard VORTEX...<br/>
+                <small>Silakan buka dashboard VORTEX dan approve agent ini.</small>
+              </p>
+            </div>
+            <div class="modal-actions">
+              <button @click="cancelOnboard">Cancel</button>
             </div>
           </div>
           <div v-else-if="onboardForm" class="agent-form">
