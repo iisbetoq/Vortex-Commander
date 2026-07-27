@@ -858,15 +858,11 @@ async def api_delete_agent(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 VORTEX_API_BASE = "https://api.vortex.haus"
 
-# In-memory store for pending onboard polling
-_onboard_pending: dict[str, dict] = {}  # invite_code -> {"name": str, "agent_id": str|None, "bearer_key": str|None}
+# In-memory store: invite_code -> {"name": str, "bearer_key": str, "runtime_kind": str}
+_onboard_pending: dict[str, dict] = {}
 
-async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | dict | None:
-    """Try to claim invite and complete setup. Returns:
-      - web.Response if error/need-approval
-      - dict with agent data if success
-      - None if need to retry later (waiting_approval)
-    """
+async def _claim_invite_only(invite_code: str) -> tuple[str | None, str | None, str | None]:
+    """Claim invite → return (bearer_key, runtime_kind, error_msg)."""
     async with aiohttp.ClientSession() as sess:
         try:
             async with sess.post(
@@ -876,21 +872,18 @@ async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | di
             ) as resp:
                 if resp.status != 200:
                     err_text = await resp.text()
-                    # If invite is not pending, tell caller to wait for approval
-                    if "agent_invite_not_pending" in err_text or "not_pending" in err_text:
-                        return None
-                    return web.json_response(
-                        {"error": "claim_failed", "detail": err_text},
-                        status=502,
-                    )
-                claim_data = await resp.json()
+                    return None, None, err_text
+                data = await resp.json()
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
-            return web.json_response({"error": "claim_network_error", "detail": str(e)}, status=502)
+            return None, None, str(e)
+    bk = data.get("bearerKey") or data.get("bearer_key") or ""
+    rk = data.get("runtimeKind") or data.get("runtime_kind") or "hermes"
+    return bk, rk, None
 
-    bearer_key = claim_data.get("bearerKey") or claim_data.get("bearer_key") or ""
-    runtime_kind = claim_data.get("runtimeKind") or claim_data.get("runtime_kind") or "hermes"
-    if not bearer_key:
-        return web.json_response({"error": "claim_no_key", "detail": str(claim_data)}, status=502)
+
+async def _finish_setup(invite_code: str, bearer_key: str, runtime_kind: str, name: str, *, poll: bool = False) -> web.Response | dict:
+    """Fetch instructions + download docs + create agent in DB + activate.
+    When poll=True, instructions 403/401 returns None (keep waiting) instead of error."""
     if runtime_kind not in ("hermes", "openclaw"):
         return web.json_response({"error": "unsupported_runtime", "runtime": runtime_kind}, status=400)
 
@@ -903,12 +896,13 @@ async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | di
             ) as resp:
                 if resp.status != 200:
                     err_text = await resp.text()
-                    return web.json_response(
-                        {"error": "instructions_fetch_failed", "detail": err_text},
-                        status=502,
-                    )
+                    if poll:
+                        return None  # keep waiting
+                    return web.json_response({"error": "instructions_fetch_failed", "detail": err_text}, status=502)
                 instr_data = await resp.json()
         except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            if poll:
+                return None
             return web.json_response({"error": "instructions_network_error", "detail": str(e)}, status=502)
 
     manifest = instr_data.get("documents") or instr_data.get("manifest") or []
@@ -944,7 +938,6 @@ async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | di
 
     agent_id = uuid.uuid4().hex
     now = time.time()
-    skills_json = json.dumps(skills_map)
     with db() as c:
         c.execute(
             """INSERT INTO agents
@@ -952,7 +945,7 @@ async def _try_claim_and_setup(invite_code: str, name: str) -> web.Response | di
                 soul_content, memory_content, skills_content, created_at, updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (agent_id, name, runtime_kind, "onboarded", bearer_key,
-             soul_content, memory_content, skills_json, now, now),
+             soul_content, memory_content, json.dumps(skills_map), now, now),
         )
 
     await _write_agent_to_disk(agent_id, soul_content, memory_content, "", skills_map, bearer_key)
@@ -974,12 +967,27 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
 
     name = (body.get("name") or "").strip()
 
-    result = await _try_claim_and_setup(invite_code, name)
+    bk, rk, err = await _claim_invite_only(invite_code)
+
+    if err:
+        # If already approved (not pending), we can still try to proceed
+        # if we can get access some other way — but for now we tell the
+        # user to create a fresh invite so we can claim it while pending.
+        return web.json_response({"error": "claim_failed", "detail": err}, status=502)
+
+    if not bk:
+        return web.json_response({"error": "claim_no_key"}, status=502)
+
+    # Claim succeeded — now try to fetch instructions.
+    # If instructions fail (not yet approved on dashboard), enter waiting mode.
+    result = await _finish_setup(invite_code, bk, rk, name, poll=True)
+    if result is None:
+        # Instructions not ready yet — save for polling
+        _onboard_pending[invite_code] = {"name": name, "bearer_key": bk, "runtime_kind": rk}
+        return web.json_response({"status": "waiting_approval", "invite_code": invite_code}, status=202)
+
     if isinstance(result, web.Response):
         return result
-    if result is None:
-        _onboard_pending[invite_code] = {"name": name, "agent_id": None, "bearer_key": None}
-        return web.json_response({"status": "waiting_approval", "invite_code": invite_code}, status=202)
     return web.json_response(result)
 
 
@@ -993,12 +1001,12 @@ async def api_onboard_poll(request: web.Request) -> web.Response:
     if not invite_code or invite_code not in _onboard_pending:
         return web.json_response({"error": "not_pending"}, status=404)
 
-    pending = _onboard_pending[invite_code]
-    result = await _try_claim_and_setup(invite_code, pending["name"])
-    if isinstance(result, web.Response):
-        return result
+    p = _onboard_pending[invite_code]
+    result = await _finish_setup(invite_code, p["bearer_key"], p["runtime_kind"], p["name"], poll=True)
     if result is None:
         return web.json_response({"status": "waiting_approval", "invite_code": invite_code})
+    if isinstance(result, web.Response):
+        return result
     del _onboard_pending[invite_code]
     return web.json_response(result)
     
