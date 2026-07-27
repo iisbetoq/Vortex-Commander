@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""set_brand.py - retarget the product name across LA3-Agent user-facing files.
+"""set_brand.py - retarget the product name across VORTEX Commander user-facing files.
 
 Idempotent: the current brand is tracked in <repo>/.brand (two lines:
 display name, then slug). Running again swaps the *current* brand for the new
@@ -46,7 +46,7 @@ def read_brand() -> tuple[str, str]:
         if len(lines) >= 2:
             return lines[0].strip(), lines[1].strip()
     # sensible default matching the shipped template
-    return "LA3 Agent", "la3-agent"
+    return "VORTEX Agent Commander", "vortex-commander"
 
 
 def replace_in(files: list[str], old: str, new: str) -> int:

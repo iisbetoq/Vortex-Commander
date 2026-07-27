@@ -14,7 +14,7 @@ echo "==> Copying repo..."
 rsync -a --delete \
   --exclude venv --exclude __pycache__ --exclude .git \
   --exclude '*.pyc' --exclude data --exclude xxxcontoh \
-  ./ "$BACKUP_DIR/la3/"
+  ./ "$BACKUP_DIR/commander/"
 
 # 2. Database
 if [ -f data/app.db ]; then
@@ -65,14 +65,14 @@ if ls hermes/skills/vortex-*/SKILL.md >/dev/null 2>&1; then
 fi
 
 # Database
-mkdir -p la3/data
+mkdir -p commander/data
 if [ -f app.db ]; then
-  cp app.db la3/data/app.db
+  cp app.db commander/data/app.db
   echo "  database restored"
 fi
 
 # Setup
-cd la3
+cd commander
 echo ""
 echo "==> Installing backend..."
 ./install/install_local.sh
@@ -101,6 +101,6 @@ echo "  tar xzf vortex-commander-backup.tar.gz"
 echo "  ./restore.sh"
 echo ""
 echo "  # 3. Start"
-echo "  cd la3 && ./run_local.sh start"
+echo "  cd commander && ./run_local.sh start"
 echo ""
 echo "Login key: ${ADMIN_KEY}"

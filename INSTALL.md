@@ -1,60 +1,62 @@
 # VORTEX Agent Commander — Install Guide
 
 ## Prerequisites
-- Linux, `python3` 3.10+, `git`
-- Hermes Agent:
+- Linux, Python 3.10+, git
+- Hermes Agent (required):
   ```bash
   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
   hermes model
   ```
 
-## Install di mesin baru
+## Local dev install
 
 ```bash
-# 1. Copy code
-rsync -avz user@oldhost:/path/to/LA3/ ./LA3/ --exclude venv --exclude __pycache__ --exclude .git
-
-# Atau git clone
-git clone <repo-url> LA3
-
-# 2. Setup (otomatis generate VORTEX_ADMIN_KEY + API_SERVER_KEY)
-cd LA3
-./install/install_local.sh
-# Note: kalau backup dari mesin lama, timpa ~/.hermes/.env setelah install_local.sh
-
-# 3. Backup database (kalau mau bawa data lama)
-rsync user@oldhost:/path/to/LA3/data/app.db ./data/app.db
-
-# 4. Jalankan
-./run_local.sh start
+./install/install_local.sh          # creates venv, installs deps, generates keys
+./run_local.sh start                # starts gateway + backend
 ```
 
-## Install production (VPS)
+The script auto-generates `VORTEX_ADMIN_KEY` and `API_SERVER_KEY` in `~/.hermes/.env` if they don't exist yet. The login key is printed at the end.
+
+## Production install (VPS)
+
 ```bash
 sudo ./install/install.sh
 ```
-Login key tercetak di akhir install.
 
-## Backup
-File/folder yang perlu dibackup ke mesin baru:
+This provisions a fresh VPS: installs Hermes, sets up systemd services, Caddy reverse proxy, and UFW firewall. The login key is printed at the end.
 
-| Path | Keterangan |
+## Moving to a new machine
+
+```bash
+# On the OLD machine, create a backup tarball:
+./scripts/backup.sh
+
+# Copy vortex-commander-backup.tar.gz to the new machine, then:
+tar xzf vortex-commander-backup.tar.gz
+./restore.sh
+cd commander && ./run_local.sh start
+```
+
+### What gets backed up
+
+| Path | Description |
 |---|---|
-| `data/app.db` | Semua agent, chats, messages, settings |
-| `~/.hermes/.env` | `VORTEX_ADMIN_KEY`, `API_SERVER_KEY` |
-| `~/.hermes/skills/vortex-*/` | Skill files per agent (bisa regenerated dari DB) |
-| Seluruh repo LA3 | Kode (exclude `venv/`, `__pycache__/`, `.git/`) |
+| `commander/` | All source code (excluding venv, __pycache__, .git) |
+| `app.db` | SQLite database — agents, chats, messages, settings |
+| `hermes/.env` | `VORTEX_ADMIN_KEY`, `API_SERVER_KEY`, Hermes config |
+| `hermes/config.yaml` | Hermes model & provider settings |
+| `hermes/skills/vortex-*/` | Per-agent skill files |
 
 ## Access
 - Web UI: `http://<ip>:61318`
-- Login: `VORTEX_ADMIN_KEY` dari `~/.hermes/.env`
+- Login: `VORTEX_ADMIN_KEY` from `~/.hermes/.env`
 
-## Manage
+## Managing the service
 ```bash
 ./run_local.sh start|stop|restart|status|logs
 ```
 
-## Rebrand
+## Rebranding
 ```bash
-python3 set_brand.py "Nama Agent Kamu"
+python3 set_brand.py "Your Agent Name"
 ```

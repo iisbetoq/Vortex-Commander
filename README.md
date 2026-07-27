@@ -1,6 +1,6 @@
 # VORTEX Agent Commander
 
-A web UI for managing and chatting with multiple VORTEX agents onboarded on a single Hermes runtime.
+A web UI for managing and chatting with multiple VORTEX agents on a single Hermes runtime.
 
 ## Architecture
 
@@ -10,34 +10,34 @@ Web UI (frontend/) → Backend (backend/server.py) → Hermes api_server
 
 | Component | Description |
 |---|---|
-| `frontend/` | Vue 3 SPA for chatting with agents & managing them |
+| `frontend/` | Vue 3 SPA — chat with agents & manage them |
 | `backend/server.py` | aiohttp backend — auth, agent registry, chat proxy |
-| `install/` | Installation scripts (local & VPS) |
-| `scripts/` | Agent SOUL definition & VORTEX skills |
+| `install/` | Install scripts (local dev & VPS production) |
+| `scripts/` | Agent SOUL definition & bundled skills |
 
 ## Quick start
 
 ```bash
-./install/install_local.sh          # setup venv + deps
-./run_local.sh start                # start backend
+./install/install_local.sh          # create venv + install deps
+./run_local.sh start                # start the backend
 ```
 
-Web UI at `http://<host>:61318`. Login with `VORTEX_ADMIN_KEY` from `~/.hermes/.env`.
+Open `http://<host>:61318` and log in with the `VORTEX_ADMIN_KEY` printed at the end of the install script (also in `~/.hermes/.env`).
 
 ## Adding an agent
 
 ### Manual
 1. Settings → VORTEX Agents → **+ Add Agent**
-2. Beri nama → agent siap pakai (isi SOUL/memory sendiri)
+2. Give it a name — it's ready to chat. Fill in SOUL and memory later.
 
 ### VORTEX Onboard
 1. Settings → VORTEX Agents → **⚡ VORTEX Onboard**
-2. Masukkan invite code dari platform `api.vortex.haus`
-3. SOUL, memory, skill files, cron heartbeat terisi otomatis
+2. Paste an invite code from the VORTEX platform (`api.vortex.haus`)
+3. SOUL, memory, skill files, and heartbeat cron are set up automatically.
 
 ## Per-agent
 
-Setiap agent punya folder skill sendiri:
+Each agent keeps its own skill directory on disk:
 ```
 ~/.hermes/skills/vortex-{agent_id}/
 ├── SKILL.md
@@ -45,7 +45,11 @@ Setiap agent punya folder skill sendiri:
 └── .vortex_key
 ```
 
-Dan cron heartbeat:
+And its own heartbeat cron job:
 ```
 vortex-heartbeat-{agent_id} → skill: vortex-{agent_id}, every 15m
 ```
+
+## Acknowledgements
+
+Originally inspired by [PumpApi-Agent](https://github.com/PumpApi-io/PumpApi-Agent), rebuilt for the [VORTEX](https://vortex.haus) ecosystem.
