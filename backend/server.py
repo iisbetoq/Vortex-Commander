@@ -930,7 +930,7 @@ async def _finish_setup(invite_code: str, bearer_key: str, runtime_kind: str, na
         elif "MEMORY.md" in path or path.lower().endswith("memory.md"):
             memory_content = content
         else:
-            rel = path.replace("skills/vortex/", "").replace("skills/", "")
+            rel = path.replace("$HERMES_HOME/", "").replace("skills/vortex/", "").replace("skills/", "")
             if rel:
                 skills_map[rel] = content
 
@@ -1130,7 +1130,10 @@ async def _write_agent_to_disk(agent_id: str, soul: str, memory: str, user_memor
             target = skill_d / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-        # Patch vortex_client.py to read .vortex_key
+        # Write .vortex_key in skills dir so the patch can find it
+        if bearer_key:
+            (skill_d / ".vortex_key").write_text(bearer_key, encoding="utf-8")
+        # Patch vortex_client.py to read .vortex_key instead of shared env
         client_py = skill_d / "scripts" / "vortex_client.py"
         if client_py.exists():
             original = client_py.read_text(encoding="utf-8")
@@ -1170,17 +1173,8 @@ async def _activate_agent(agent_id: str) -> None:
         if dst_skill.exists():
             shutil.rmtree(str(dst_skill))
         shutil.copytree(str(src_skill), str(dst_skill))
-    # .env key
-    key_file = ad / ".vortex_key"
-    if key_file.exists():
-        key = key_file.read_text().strip()
-        # Update or add VORTEX_AGENT_API_KEY in .env
-        env_path = HERMES_ENV
-        if env_path.exists():
-            lines = env_path.read_text(encoding="utf-8").splitlines()
-            new_lines = [l for l in lines if not l.startswith("VORTEX_AGENT_API_KEY=")]
-            new_lines.append(f"VORTEX_AGENT_API_KEY={key}")
-            env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    # Note: we do NOT touch the shared .env — each agent's vortex_client.py
+    # reads its own .vortex_key from skills/vortex/ via the injected patch.
 
 
 async def _deactivate_agent() -> None:
