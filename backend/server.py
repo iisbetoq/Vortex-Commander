@@ -8,6 +8,7 @@ import logging
 import mimetypes
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import time
@@ -31,6 +32,7 @@ HERMES_HOME = Path(os.path.expanduser("~/.hermes"))
 HERMES_ENV = HERMES_HOME / ".env"
 HERMES_MEM_DIR = HERMES_HOME / "memories"
 HERMES_SKILLS_DIR = HERMES_HOME / "skills"
+VORTEX_AGENTS_DIR = HERMES_HOME / "vortex-agents"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -837,7 +839,12 @@ async def api_patch_agent(request: web.Request) -> web.Response:
 async def api_delete_agent(request: web.Request) -> web.Response:
     agent_id = request.match_info["agent_id"]
     await _remove_heartbeat_cron(agent_id)
-    await _remove_agent_skills(agent_id)
+    # Deactivate if active
+    await _deactivate_agent()
+    # Remove per-agent directory
+    ad = _agent_dir(agent_id)
+    if ad.exists():
+        shutil.rmtree(str(ad))
     with db() as c:
         c.execute("DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE agent_id=?)", (agent_id,))
         c.execute("DELETE FROM chats WHERE agent_id=?", (agent_id,))
@@ -956,8 +963,9 @@ async def api_onboard_agent(request: web.Request) -> web.Response:
              soul_content, memory_content, skills_json, now, now),
         )
 
-    # Step 6: Write skill files to disk + setup cron
-    await _write_agent_skills(agent_id, skills_map, bearer_key)
+    # Step 6: Write to per-agent directory + activate + setup cron
+    await _write_agent_to_disk(agent_id, soul_content, memory_content, "", skills_map, bearer_key)
+    await _activate_agent(agent_id)
     await _setup_heartbeat_cron(agent_id)
 
     return web.json_response({
@@ -1046,6 +1054,182 @@ async def _remove_heartbeat_cron(agent_id: str) -> None:
     ok, msg = await _run("hermes", "cron", "remove", "--name", cron_name, timeout=30)
     if not ok and "not found" not in msg.lower():
         log.warning("heartbeat cron remove for %s: %s", agent_id, msg[:200])
+
+
+# ---------------------------------------------------------------------------
+# Per-agent directory management (OpenClaw-style isolated agent dirs)
+# ---------------------------------------------------------------------------
+
+def _agent_dir(agent_id: str) -> Path:
+    return VORTEX_AGENTS_DIR / agent_id
+
+
+async def _write_agent_to_disk(agent_id: str, soul: str, memory: str, user_memory: str,
+                                skills: dict[str, str], bearer_key: str) -> None:
+    """Write all agent files to its isolated vortex-agents/{id}/ directory."""
+    ad = _agent_dir(agent_id)
+    if ad.exists():
+        shutil.rmtree(str(ad))
+    ad.mkdir(parents=True, exist_ok=True)
+    if soul:
+        (ad / "SOUL.md").write_text(soul, encoding="utf-8")
+    mem_d = ad / "memories"
+    mem_d.mkdir(exist_ok=True)
+    if memory:
+        (mem_d / "MEMORY.md").write_text(memory, encoding="utf-8")
+    if user_memory:
+        (mem_d / "USER.md").write_text(user_memory, encoding="utf-8")
+    if bearer_key:
+        (ad / ".vortex_key").write_text(bearer_key, encoding="utf-8")
+    if skills:
+        skill_d = ad / "skills" / "vortex"
+        skill_d.mkdir(parents=True, exist_ok=True)
+        for rel_path, content in skills.items():
+            target = skill_d / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        # Patch vortex_client.py to read .vortex_key
+        client_py = skill_d / "scripts" / "vortex_client.py"
+        if client_py.exists():
+            original = client_py.read_text(encoding="utf-8")
+            if "# --- vortex_key patch ---" not in original:
+                patch = (
+                    '# --- vortex_key patch ---\n'
+                    'import os, pathlib\n'
+                    '_vk = pathlib.Path(__file__).resolve().parent.parent / ".vortex_key"\n'
+                    'if _vk.exists():\n'
+                    '    os.environ["VORTEX_AGENT_API_KEY"] = _vk.read_text().strip()\n'
+                    '# --- end vortex_key patch ---\n\n'
+                )
+                client_py.write_text(patch + original, encoding="utf-8")
+
+
+async def _activate_agent(agent_id: str) -> None:
+    """Symlink/copy agent files to default Hermes paths so the running Hermes
+    gateway picks them up. Only one agent can be active at a time."""
+    ad = _agent_dir(agent_id)
+    if not ad.exists():
+        return
+    # SOUL.md
+    soul_file = ad / "SOUL.md"
+    if soul_file.exists():
+        HERMES_HOME.joinpath("SOUL.md").write_text(soul_file.read_text(), encoding="utf-8")
+    # Memories
+    for name in ("MEMORY.md", "USER.md"):
+        src = ad / "memories" / name
+        if src.exists():
+            dst = HERMES_MEM_DIR / name
+            dst.parent.mkdir(exist_ok=True)
+            dst.write_text(src.read_text(), encoding="utf-8")
+    # Skills vortex/
+    src_skill = ad / "skills" / "vortex"
+    if src_skill.exists():
+        dst_skill = HERMES_SKILLS_DIR / "vortex"
+        if dst_skill.exists():
+            shutil.rmtree(str(dst_skill))
+        shutil.copytree(str(src_skill), str(dst_skill))
+    # .env key
+    key_file = ad / ".vortex_key"
+    if key_file.exists():
+        key = key_file.read_text().strip()
+        # Update or add VORTEX_AGENT_API_KEY in .env
+        env_path = HERMES_ENV
+        if env_path.exists():
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+            new_lines = [l for l in lines if not l.startswith("VORTEX_AGENT_API_KEY=")]
+            new_lines.append(f"VORTEX_AGENT_API_KEY={key}")
+            env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+async def _deactivate_agent() -> None:
+    """Remove active agent files from default Hermes paths (keep vortex-agents/)."""
+    for p in [HERMES_HOME / "SOUL.md",
+              HERMES_SKILLS_DIR / "vortex"]:
+        if p.exists():
+            if p.is_dir():
+                shutil.rmtree(str(p))
+            else:
+                p.unlink(missing_ok=True)
+    for name in ("MEMORY.md", "USER.md"):
+        p = HERMES_MEM_DIR / name
+        if p.exists():
+            p.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Import existing VORTEX agent from Hermes into Commander
+# ---------------------------------------------------------------------------
+
+async def api_import_existing(request: web.Request) -> web.Response:
+    """Scan Hermes defaults for an existing VORTEX agent and create a Commander entry."""
+    soul_path = HERMES_HOME / "SOUL.md"
+    skill_dir = HERMES_SKILLS_DIR / "vortex"
+    mem_dir = HERMES_MEM_DIR
+
+    if not soul_path.exists():
+        return web.json_response({"error": "no_existing_agent", "detail": "No SOUL.md found"}, status=404)
+
+    soul = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
+    memory = (mem_dir / "MEMORY.md").read_text(encoding="utf-8") if (mem_dir / "MEMORY.md").exists() else ""
+    user_memory = (mem_dir / "USER.md").read_text(encoding="utf-8") if (mem_dir / "USER.md").exists() else ""
+
+    skills: dict[str, str] = {}
+    if skill_dir.exists():
+        for f in skill_dir.rglob("*"):
+            if f.is_file():
+                rel = f.relative_to(skill_dir)
+                skills[str(rel)] = f.read_text(encoding="utf-8")
+
+    bearer_key = ""
+    env_key = (HERMES_HOME / ".env").read_text(encoding="utf-8") if (HERMES_HOME / ".env").exists() else ""
+    for line in env_key.splitlines():
+        if line.startswith("VORTEX_AGENT_API_KEY="):
+            bearer_key = line.split("=", 1)[1].strip()
+            break
+
+    name = "VORTEX Agent (imported)"
+
+    agent_id = uuid.uuid4().hex
+    now = time.time()
+    skills_json = json.dumps(skills)
+
+    with db() as c:
+        c.execute(
+            """INSERT INTO agents
+               (id, name, runtime_kind, status, vortex_agent_api_key,
+                soul_content, memory_content, user_memory_content, skills_content,
+                created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (agent_id, name, "hermes", "imported", bearer_key,
+             soul, memory, user_memory, skills_json, now, now),
+        )
+
+    # Write to per-agent directory
+    await _write_agent_to_disk(agent_id, soul, memory, user_memory, skills, bearer_key)
+    await _activate_agent(agent_id)
+
+    return web.json_response({"id": agent_id, "name": name, "status": "imported"})
+
+
+# ---------------------------------------------------------------------------
+# Activate an agent (write its files to Hermes default paths)
+# ---------------------------------------------------------------------------
+
+async def api_activate_agent(request: web.Request) -> web.Response:
+    agent_id = request.match_info["agent_id"]
+    with db() as c:
+        row = c.execute("SELECT * FROM agents WHERE id=?", (agent_id,)).fetchone()
+    if not row:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    await _activate_agent(agent_id)
+    return web.json_response({"ok": True, "activated": agent_id})
+
+
+async def api_deactivate_agent(request: web.Request) -> web.Response:
+    agent_id = request.match_info["agent_id"]
+    await _deactivate_agent()
+    return web.json_response({"ok": True, "deactivated": agent_id})
 
 
 # ---------------------------------------------------------------------------
@@ -2261,6 +2445,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/agents", require_auth(api_list_agents))
     app.router.add_post("/api/agents", require_auth(api_create_agent))
     app.router.add_post("/api/agents/onboard", require_auth(api_onboard_agent))
+    app.router.add_post("/api/agents/import-existing", require_auth(api_import_existing))
     app.router.add_get("/api/agents/{agent_id}", require_auth(api_get_agent))
     app.router.add_patch("/api/agents/{agent_id}", require_auth(api_patch_agent))
     app.router.add_delete("/api/agents/{agent_id}", require_auth(api_delete_agent))
@@ -2268,6 +2453,8 @@ def create_app() -> web.Application:
     app.router.add_put("/api/agents/{agent_id}/soul", require_auth(api_put_agent_soul))
     app.router.add_get("/api/agents/{agent_id}/memory", require_auth(api_get_agent_memory))
     app.router.add_put("/api/agents/{agent_id}/memory", require_auth(api_put_agent_memory))
+    app.router.add_post("/api/agents/{agent_id}/activate", require_auth(api_activate_agent))
+    app.router.add_post("/api/agents/{agent_id}/deactivate", require_auth(api_deactivate_agent))
 
     # Memory (Hermes agent's saved facts about user & environment)
     app.router.add_get("/api/memory/{target}", require_auth(api_get_memory))

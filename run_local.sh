@@ -79,9 +79,12 @@ _port() { (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep -q ":$1 " &
 # ---- commands --------------------------------------------------------------
 cmd_start() {
   echo "Starting VORTEX Agent stack..."
-  _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run
-  # give api_server a moment to bind before backend proxies to it
-  sleep 4
+  if _port 61317 | grep -q UP; then
+    echo "  gateway (api_server:61317) already running (port 61317 is UP)"
+  else
+    _start_one "gateway (api_server:61317)" "$GW_PID" "$GW_LOG" "$HERMES_BIN" gateway run
+    sleep 4
+  fi
   _start_one "backend (web:61318)" "$BE_PID" "$BE_LOG" "$VENV_PY" "$ROOT/backend/server.py"
   echo
   cmd_status

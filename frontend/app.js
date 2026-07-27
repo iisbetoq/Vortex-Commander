@@ -836,7 +836,9 @@ const App = {
     }
 
     // ---- Agent management ----
-    const agentForm = ref(null); // {name, runtime_kind, vortex_agent_api_key}
+    const agentForm = ref(null);
+    const importBusy = ref(false);
+    const activateBusy = ref<string | null>(null);
     async function addAgent() {
       const name = agentForm.value?.name?.trim();
       if (!name) return;
@@ -865,6 +867,19 @@ const App = {
       agentForm.value = { name: '' };
     }
     function cancelAddAgent() { agentForm.value = null; }
+
+    async function importExistingAgent() {
+      importBusy.value = true;
+      try {
+        const r = await api('/api/agents/import-existing', { method: 'POST' });
+        toast(`✅ Imported: ${r.name}`);
+        await loadAgents();
+      } catch (e) {
+        toast(`Import failed: ${e.message || e}`, 'error');
+      } finally {
+        importBusy.value = false;
+      }
+    }
 
     // ---- VORTEX Onboard ----
     const onboardForm = ref(null); // {invite_code, name}
@@ -964,6 +979,19 @@ const App = {
       }
     }
     function closeAgentEditor() { agentEditor.value = null; panel.value = null; }
+
+    async function activateAgent(agentId) {
+      if (activateBusy.value) return;
+      activateBusy.value = agentId;
+      try {
+        await api(`/api/agents/${agentId}/activate`, { method: 'POST' });
+        toast('Agent activated — SOUL, skills, memory written to Hermes');
+      } catch (e) {
+        toast(`Activate failed: ${e.message || e}`, 'error');
+      } finally {
+        activateBusy.value = null;
+      }
+    }
 
     async function newChat({ replace = false } = {}) {
       stopPolling();
@@ -1959,6 +1987,7 @@ const App = {
       settings,
       // settings hub
       panel, messengerStatus, onAgentChange, addAgent, removeAgent, agentForm, startAddAgent, cancelAddAgent,
+      importBusy, importExistingAgent, activateAgent, activateBusy,
       onboardForm, onboardBusy, onboardAgent, startOnboard, cancelOnboard,
       agentEditor, openAgentEditor, saveAgentEditor, closeAgentEditor,
       memEditor, openMemory, saveMemory,
@@ -2397,6 +2426,7 @@ const App = {
                 <div class="skill-name">{{ a.name }} <span v-if="a.status === 'onboarded'" class="skill-cat" style="color:#6abf69;">VORTEX</span></div>
                 <div class="skill-desc">Runtime: {{ a.runtime_kind }} · Status: {{ a.status }}</div>
               </div>
+              <button class="icon-btn" @click="activateAgent(a.id)" title="Write SOUL/skills to Hermes" :disabled="activateBusy === a.id">{{ activateBusy === a.id ? '…' : '▶' }}</button>
               <button class="icon-btn" @click="openAgentEditor(a)" title="Edit SOUL & memory">✏️</button>
               <button class="icon-btn" @click="selectedAgentId = a.id; panel = null" title="Select">✓</button>
               <button class="icon-btn danger" @click="removeAgent(a.id)" title="Remove">🗑</button>
@@ -2432,6 +2462,7 @@ const App = {
           <div v-else class="modal-actions">
             <button @click="startAddAgent">+ Add Agent</button>
             <button class="primary" @click="startOnboard">⚡ VORTEX Onboard</button>
+            <button :disabled="importBusy" @click="importExistingAgent">{{ importBusy ? 'Importing…' : '📥 Import existing' }}</button>
             <button @click="panel = null">Close</button>
           </div>
         </div>
