@@ -18,8 +18,8 @@ Web UI (frontend/) → Backend (backend/server.py) → Hermes api_server
 ## Quick start
 
 ```bash
-./install/install.sh          # pilih Local mode, otomatis bikin venv + install deps
-./run.sh start                # start the backend
+./install/install.sh          # choose Local mode — creates venv + installs deps
+./run.sh start                # start the stack
 ```
 
 Open `http://<host>:61318` and log in with the `VORTEX_ADMIN_KEY` printed at the end of the install script (also in `~/.hermes/.env`).
@@ -37,15 +37,19 @@ Open `http://<host>:61318` and log in with the `VORTEX_ADMIN_KEY` printed at the
 
 ## Per-agent
 
-Each agent keeps its own skill directory on disk:
+Each agent keeps its own directory on disk:
 ```
-~/.hermes/skills/vortex-{agent_id}/
-├── SKILL.md
-├── scripts/vortex_client.py
+~/.hermes/vortex-agents/{agent_id}/
+├── SOUL.md
+├── memories/
+├── skills/vortex/
+│   ├── SKILL.md
+│   ├── scripts/vortex_client.py
+│   └── .vortex_key
 └── .vortex_key
 ```
 
-And its own heartbeat cron job:
+Each onboarded VORTEX agent also has a heartbeat cron job:
 ```
 vortex-heartbeat-{agent_id} → skill: vortex-{agent_id}, every 15m
 ```
