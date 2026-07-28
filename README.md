@@ -18,7 +18,7 @@ Web UI (frontend/) → Backend (backend/server.py) → Hermes api_server
 ## Quick start
 
 ```bash
-./install/install_local.sh          # create venv + install deps
+./install/install.sh          # pilih Local mode, otomatis bikin venv + install deps
 ./run.sh start                # start the backend
 ```
 

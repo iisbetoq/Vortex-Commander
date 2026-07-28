@@ -1,62 +1,91 @@
-# VORTEX Agent Commander — Install Guide
+# VORTEX Agent Commander — Panduan Install
 
-## Prerequisites
-- Linux, Python 3.10+, git
-- Hermes Agent (required):
-  ```bash
-  curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-  hermes model
-  ```
+## 1. Clone repositori
 
-## Local dev install
+Buka terminal, lalu:
 
 ```bash
-./install/install_local.sh          # creates venv, installs deps, generates keys
-./run.sh start                # starts gateway + backend
+git clone https://github.com/iisbetoq/Vortex-Commander.git
+cd Vortex-Commander
 ```
 
-The script auto-generates `VORTEX_ADMIN_KEY` and `API_SERVER_KEY` in `~/.hermes/.env` if they don't exist yet. The login key is printed at the end.
+> **Catatan:** Kalo belum punya git, install dulu:
+> ```bash
+> sudo apt install git -y       # Ubuntu/Debian
+> sudo dnf install git -y       # Fedora
+> ```
 
-## Production install (VPS)
+## 2. Install Hermes Agent (wajib)
 
 ```bash
-sudo ./install/install.sh
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 ```
 
-This provisions a fresh VPS: installs Hermes, sets up systemd services, Caddy reverse proxy, and UFW firewall. The login key is printed at the end.
-
-## Moving to a new machine
+Tutup terminal, buka lagi. Terus set model:
 
 ```bash
-# On the OLD machine, create a backup tarball:
+hermes model
+```
+
+## 3. Install VORTEX Commander
+
+Jalankan:
+
+```bash
+./install/install.sh
+```
+
+Nanti ditanya: **VPS** atau **Local**?
+
+| Mode | Buat | Keterangan |
+|------|------|------------|
+| **Local** | PC/laptop sendiri | Tanpa sudo, venv aja |
+| **VPS** | Server online | Pasang systemd, firewall, domain |
+
+**Pilih Local** kalo install di laptop/PC sendiri.
+
+## 4. Jalankan
+
+```bash
+./run.sh start
+```
+
+Tunggu beberapa detik, buka browser:
+
+```
+http://127.0.0.1:61318
+```
+
+**Login key** bisa dilihat di:
+
+```bash
+grep VORTEX_ADMIN_KEY ~/.hermes/.env
+```
+
+## Perintah dasar
+
+```bash
+./run.sh start       # Jalankan
+./run.sh stop        # Hentikan
+./run.sh restart     # Restart
+./run.sh status      # Cek status
+./run.sh logs        # Lihat log
+```
+
+## Backup & pindah mesin
+
+```bash
+# Di mesin lama:
 ./scripts/backup.sh
+# Hasil: vortex-commander-backup.tar.gz
 
-# Copy vortex-commander-backup.tar.gz to the new machine, then:
+# Di mesin baru:
 tar xzf vortex-commander-backup.tar.gz
-./restore.sh
 cd commander && ./run.sh start
 ```
 
-### What gets backed up
+## Ganti brand
 
-| Path | Description |
-|---|---|
-| `commander/` | All source code (excluding venv, __pycache__, .git) |
-| `app.db` | SQLite database — agents, chats, messages, settings |
-| `hermes/.env` | `VORTEX_ADMIN_KEY`, `API_SERVER_KEY`, Hermes config |
-| `hermes/config.yaml` | Hermes model & provider settings |
-| `hermes/skills/vortex-*/` | Per-agent skill files |
-
-## Access
-- Web UI: `http://<ip>:61318`
-- Login: `VORTEX_ADMIN_KEY` from `~/.hermes/.env`
-
-## Managing the service
 ```bash
-./run.sh start|stop|restart|status|logs
-```
-
-## Rebranding
-```bash
-python3 set_brand.py "Your Agent Name"
+python3 set_brand.py "Nama Agent Kamu"
 ```
