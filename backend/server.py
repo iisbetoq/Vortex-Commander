@@ -1222,6 +1222,8 @@ async def api_activate_agent(request: web.Request) -> web.Response:
         return web.json_response({"error": "not_found"}, status=404)
 
     await _activate_agent(agent_id)
+    # Restart gateway so it picks up the new SOUL.md (Hermes caches it in memory)
+    asyncio.create_task(_restart_gateway())
     return web.json_response({"ok": True, "activated": agent_id})
 
 
@@ -2238,9 +2240,6 @@ async def api_chat_stream(request: web.Request) -> web.StreamResponse:
             c.execute("UPDATE chats SET agent_id=? WHERE id=?", (agent_id, chat_id))
 
     messages = _build_messages(chat_id)
-    # Ensure this agent's files are active in Hermes defaults (SOUL.md etc.)
-    if agent_id:
-        await _activate_agent(agent_id)
     # Inject agent identity (SOUL) as the first system message
     system_prompts = []
     if agent_id:

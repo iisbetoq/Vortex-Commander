@@ -857,12 +857,18 @@ const App = {
       const name = agentForm.value?.name?.trim();
       if (!name) return;
       try {
-        await api('/api/agents', {
+        const res = await api('/api/agents', {
           method: 'POST',
           body: JSON.stringify({ name, runtime_kind: agentForm.value.runtime_kind || 'hermes' }),
         });
         agentForm.value = null;
         await loadAgents();
+        // Auto-activate and switch to the new agent
+        if (res?.id) {
+          await activateAgent(res.id);
+          selectedAgentId.value = res.id;
+          await onAgentChange(res.id);
+        }
       } catch (e) { console.error('addAgent', e); }
     }
     async function removeAgent(agentId) {
