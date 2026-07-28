@@ -957,6 +957,8 @@ async def _finish_setup(invite_code: str, bearer_key: str, runtime_kind: str, na
 
     await _write_agent_to_disk(agent_id, soul_content, memory_content, "", skills_map, bearer_key)
     await _activate_agent(agent_id)
+    # Restart gateway so it picks up the new SOUL.md immediately
+    asyncio.create_task(_restart_gateway())
     await _setup_heartbeat_cron(agent_id)
 
     return {"id": agent_id, "name": name, "runtime_kind": runtime_kind, "status": "onboarded"}
