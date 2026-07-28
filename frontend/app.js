@@ -898,7 +898,7 @@ const App = {
 
     async function onboardAgent() {
       const code = onboardForm.value?.invite_code?.trim();
-      if (!code) { onboardError.value = 'Masukkan invite code'; return; }
+      if (!code) { onboardError.value = 'Enter invite code'; return; }
       onboardError.value = '';
       onboardBusy.value = true;
       onboardWaiting.value = false;
@@ -935,7 +935,7 @@ const App = {
         selectedAgentId.value = agent.id;
         await newChat({ replace: true });
       } catch (e) {
-        onboardError.value = `Onboard gagal: ${e.message || e}`;
+        onboardError.value = `Onboard failed: ${e.message || e}`;
         toast(`Onboard failed: ${e.message || e}`, 'error');
       } finally {
         if (!onboardWaiting.value) onboardBusy.value = false;
@@ -2536,8 +2536,8 @@ const App = {
           <div v-else-if="onboardWaiting" class="agent-form">
             <div class="field">
               <p style="text-align:center;margin:12px 0;">
-                ⏳ Menunggu approve dari dashboard VORTEX...<br/>
-                <small>Silakan buka dashboard VORTEX dan approve agent ini.</small>
+                ⏳ Waiting for approval from VORTEX dashboard...<br/>
+                <small>Open the VORTEX dashboard and approve this agent.</small>
               </p>
             </div>
             <div class="modal-actions">
