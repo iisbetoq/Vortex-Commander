@@ -943,17 +943,26 @@ async def _finish_setup(invite_code: str, bearer_key: str, runtime_kind: str, na
     if not name:
         name = instr_data.get("instructionProfile", {}).get("name", "VORTEX Agent")
 
-    agent_id = uuid.uuid4().hex
     now = time.time()
     with db() as c:
-        c.execute(
-            """INSERT INTO agents
-               (id, name, runtime_kind, status, vortex_agent_api_key,
-                soul_content, memory_content, skills_content, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (agent_id, name, runtime_kind, "onboarded", bearer_key,
-             soul_content, memory_content, json.dumps(skills_map), now, now),
-        )
+        # Dedup: if an agent already exists with this bearer_key, update it
+        existing = c.execute("SELECT id, name FROM agents WHERE vortex_agent_api_key=? AND status='onboarded'", (bearer_key,)).fetchone()
+        if existing:
+            agent_id = existing["id"]
+            c.execute(
+                "UPDATE agents SET name=?, soul_content=?, memory_content=?, skills_content=?, updated_at=? WHERE id=?",
+                (name or existing["name"], soul_content, memory_content, json.dumps(skills_map), now, agent_id),
+            )
+        else:
+            agent_id = uuid.uuid4().hex
+            c.execute(
+                """INSERT INTO agents
+                   (id, name, runtime_kind, status, vortex_agent_api_key,
+                    soul_content, memory_content, skills_content, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (agent_id, name, runtime_kind, "onboarded", bearer_key,
+                 soul_content, memory_content, json.dumps(skills_map), now, now),
+            )
 
     await _write_agent_to_disk(agent_id, soul_content, memory_content, "", skills_map, bearer_key)
     await _activate_agent(agent_id)
