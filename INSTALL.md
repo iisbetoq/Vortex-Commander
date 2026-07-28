@@ -12,7 +12,7 @@
 
 ```bash
 ./install/install_local.sh          # creates venv, installs deps, generates keys
-./run_local.sh start                # starts gateway + backend
+./run.sh start                # starts gateway + backend
 ```
 
 The script auto-generates `VORTEX_ADMIN_KEY` and `API_SERVER_KEY` in `~/.hermes/.env` if they don't exist yet. The login key is printed at the end.
@@ -34,7 +34,7 @@ This provisions a fresh VPS: installs Hermes, sets up systemd services, Caddy re
 # Copy vortex-commander-backup.tar.gz to the new machine, then:
 tar xzf vortex-commander-backup.tar.gz
 ./restore.sh
-cd commander && ./run_local.sh start
+cd commander && ./run.sh start
 ```
 
 ### What gets backed up
@@ -53,7 +53,7 @@ cd commander && ./run_local.sh start
 
 ## Managing the service
 ```bash
-./run_local.sh start|stop|restart|status|logs
+./run.sh start|stop|restart|status|logs
 ```
 
 ## Rebranding

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# run_local.sh - start / stop / status / restart the VORTEX Agent stack locally.
+# run.sh - start / stop / status / restart the VORTEX Agent stack locally.
 #
 # Runs two detached processes so they SURVIVE closing your terminal/SSH session:
 #   1. Hermes gateway  -> hosts api_server on 127.0.0.1:61317
 #   2. Backend server  -> web UI + proxy on 0.0.0.0:61318
 #
 # Usage:
-#   ./run_local.sh start      # start both (idempotent)
-#   ./run_local.sh stop       # stop both
-#   ./run_local.sh restart    # stop then start
-#   ./run_local.sh status     # show what is running + ports
-#   ./run_local.sh logs       # tail both logs (Ctrl-C to exit)
+#   ./run.sh start      # start both (idempotent)
+#   ./run.sh stop       # stop both
+#   ./run.sh restart    # stop then start
+#   ./run.sh status     # show what is running + ports
+#   ./run.sh logs       # tail both logs (Ctrl-C to exit)
 #
 # Logs:  <repo>/data/logs/gateway.log , <repo>/data/logs/backend.log
 # PIDs:  <repo>/data/run/gateway.pid  , <repo>/data/run/backend.pid

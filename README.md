@@ -19,7 +19,7 @@ Web UI (frontend/) → Backend (backend/server.py) → Hermes api_server
 
 ```bash
 ./install/install_local.sh          # create venv + install deps
-./run_local.sh start                # start the backend
+./run.sh start                # start the backend
 ```
 
 Open `http://<host>:61318` and log in with the `VORTEX_ADMIN_KEY` printed at the end of the install script (also in `~/.hermes/.env`).

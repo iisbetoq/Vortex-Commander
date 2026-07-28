@@ -189,6 +189,6 @@ else
   echo "  Login key:  ${ADMIN_KEY}"
   echo "  Web UI:     http://<this-host>:61318"
   echo ""
-  echo "  Run:  ./run_local.sh start"
+  echo "  Run:  ./run.sh start"
   echo "================================================"
 fi
