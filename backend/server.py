@@ -1160,6 +1160,8 @@ async def _activate_agent(agent_id: str) -> None:
     gateway picks them up. Only one agent can be active at a time."""
     ad = _agent_dir(agent_id)
     if not ad.exists():
+        # Agent has no per-agent dir — clean Hermes defaults (blank agent)
+        _deactivate_agent()
         return
     # SOUL.md — clean old if new agent has none
     soul_file = ad / "SOUL.md"
@@ -2236,6 +2238,9 @@ async def api_chat_stream(request: web.Request) -> web.StreamResponse:
             c.execute("UPDATE chats SET agent_id=? WHERE id=?", (agent_id, chat_id))
 
     messages = _build_messages(chat_id)
+    # Ensure this agent's files are active in Hermes defaults (SOUL.md etc.)
+    if agent_id:
+        await _activate_agent(agent_id)
     # Inject agent identity (SOUL) as the first system message
     system_prompts = []
     if agent_id:
