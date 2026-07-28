@@ -1161,24 +1161,34 @@ async def _activate_agent(agent_id: str) -> None:
     ad = _agent_dir(agent_id)
     if not ad.exists():
         return
-    # SOUL.md
+    # SOUL.md — clean old if new agent has none
     soul_file = ad / "SOUL.md"
     if soul_file.exists():
         HERMES_HOME.joinpath("SOUL.md").write_text(soul_file.read_text(), encoding="utf-8")
+    else:
+        p = HERMES_HOME / "SOUL.md"
+        if p.exists():
+            p.unlink()
     # Memories
     for name in ("MEMORY.md", "USER.md"):
         src = ad / "memories" / name
+        dst = HERMES_MEM_DIR / name
         if src.exists():
-            dst = HERMES_MEM_DIR / name
             dst.parent.mkdir(exist_ok=True)
             dst.write_text(src.read_text(), encoding="utf-8")
+        else:
+            if dst.exists():
+                dst.unlink()
     # Skills vortex/
     src_skill = ad / "skills" / "vortex"
+    dst_skill = HERMES_SKILLS_DIR / "vortex"
     if src_skill.exists():
-        dst_skill = HERMES_SKILLS_DIR / "vortex"
         if dst_skill.exists():
             shutil.rmtree(str(dst_skill))
         shutil.copytree(str(src_skill), str(dst_skill))
+    else:
+        if dst_skill.exists():
+            shutil.rmtree(str(dst_skill))
     # Note: we do NOT touch the shared .env — each agent's vortex_client.py
     # reads its own .vortex_key from skills/vortex/ via the injected patch.
 
